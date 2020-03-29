@@ -72,13 +72,14 @@ def plot_one_sample(axs, task, split, **kwargs):
 def plot_task(task, filename, **kwargs):
     patterns = kwargs.get('patterns')
     export_to = kwargs.get('export_to')
+    task_id = kwargs.get('task_id')
 
     n = len(task["train"]) + len(task["test"])
     fig, axs = plt.subplots(2, n, figsize=(6*n, 10), dpi=72)
     plt.subplots_adjust(wspace=0, hspace=0)
     plot_one_sample(axs, task['train'], 'Train', **kwargs)
     plot_one_sample(axs[:, len(task['train']):], task['test'], 'Test', **kwargs)
-    plt.suptitle(f'Task {filename[:-5]}', y=1.05, fontsize=20)
+    plt.suptitle(f'Task {task_id} [{filename[:-5]}]', y=1.05, fontsize=20)
     if patterns is not None:
         plt.suptitle(f'Task {filename[:-5]}\nPatterns: {patterns}', y=1.05, fontsize=20)
     plt.tight_layout()
@@ -91,22 +92,6 @@ def plot_task(task, filename, **kwargs):
         plt.show()
 
 
-def plot_pred_and_target(pred, target, filename, sample_id, is_pred=True):
-    if pred is None or target is None:
-        return
-    pred_title = 'Predicted'
-    if not is_pred:
-        pred_title = 'Input'
-    title = "{} {}_{}".format(pred_title, filename, sample_id)
-    fig, axs = plt.subplots(1, 2, figsize=(6*2, 10), dpi=72)
-    plot_one_ax(axs[0], pred, cmap=cmap,
-                norm=norm, title=title)
-    plot_one_ax(axs[1], target, cmap=cmap,
-                norm=norm, title=f'Target {filename}')
-    plt.tight_layout()
-    plt.show()
-
-
 def load_and_plot(tasks_path, task_fn, return_what=0, **kwargs):
     task_file = str(tasks_path / task_fn)
 
@@ -117,9 +102,25 @@ def load_and_plot(tasks_path, task_fn, return_what=0, **kwargs):
         plot_task(task, task_fn, **kwargs)
     elif return_what == 1:
         return task
-    elif return_what == 2
+    elif return_what == 2:
         plot_task(task, task_fn, **kwargs)
         return task
+
+
+def plot_pred_and_target(pred, target, filename, sample_id, is_pred=True):
+    if pred is None or target is None:
+        return
+    pred_title = 'Predicted'
+    if not is_pred:
+        pred_title = 'Input'
+    title = "{} {}_{}".format(pred_title, filename, sample_id)
+    fig, axs = plt.subplots(1, 2, figsize=(12, 10), dpi=72)
+    plot_one_ax(axs[0], pred, cmap=cmap,
+                norm=norm, title=title)
+    plot_one_ax(axs[1], target, cmap=cmap,
+                norm=norm, title=f'Target {filename}')
+    plt.tight_layout()
+    plt.show()
 
 
 def just_plot(pixmap):
