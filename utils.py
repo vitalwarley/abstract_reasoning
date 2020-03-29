@@ -91,23 +91,43 @@ def plot_task(task, filename, **kwargs):
         plt.show()
 
 
-def load_and_plot(tasks_path, task_fn, **kwargs):
+def plot_pred_and_target(pred, target, filename, sample_id, is_pred=True):
+    if pred is None or target is None:
+        return
+    pred_title = 'Predicted'
+    if not is_pred:
+        pred_title = 'Input'
+    title = "{} {}_{}".format(pred_title, filename, sample_id)
+    fig, axs = plt.subplots(1, 2, figsize=(6*2, 10), dpi=72)
+    plot_one_ax(axs[0], pred, cmap=cmap,
+                norm=norm, title=title)
+    plot_one_ax(axs[1], target, cmap=cmap,
+                norm=norm, title=f'Target {filename}')
+    plt.tight_layout()
+    plt.show()
+
+
+def load_and_plot(tasks_path, task_fn, return_what=0, **kwargs):
     task_file = str(tasks_path / task_fn)
 
     with open(task_file, 'r') as f:
         task = json.load(f)
 
-    plot_task(task, task_fn, **kwargs)
+    if return_what == 0:
+        plot_task(task, task_fn, **kwargs)
+    elif return_what == 1:
+        return task
+    elif return_what == 2
+        plot_task(task, task_fn, **kwargs)
+        return task
 
 
-
-def just_load_task(task_fn, training_path):
-    task_file = str(training_path / task_fn)
-
-    with open(task_file, 'r') as f:
-        task = json.load(f)
-
-    return task
+def just_plot(pixmap):
+    fig, ax = plt.subplots(1, 1, figsize=(6, 10), dpi=72)
+    plot_one_ax(ax, pixmap, cmap=cmap,
+                norm=norm, title='A simple plot')
+    plt.tight_layout()
+    plt.show()
 
 
 def build_df_tags():
@@ -155,6 +175,7 @@ def build_df_tags():
 
 
 def save_imgs_with_pattern(pattern=None):
+    # TODO: make searching for image with certain patterns easy (PR in ARC?)
 
     df = build_df_tags()
 
