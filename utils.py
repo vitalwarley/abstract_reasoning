@@ -75,7 +75,8 @@ def plot_task(task, filename, **kwargs):
     task_id = kwargs.get('task_id')
 
     n = len(task["train"]) + len(task["test"])
-    fig, axs = plt.subplots(2, n, figsize=(6*n, 10), dpi=72)
+
+    fig, axs = plt.subplots(2, n, figsize=(6 * n, 10), dpi=72)
     plt.subplots_adjust(wspace=0, hspace=0)
     plot_one_sample(axs, task['train'], 'Train', **kwargs)
     plot_one_sample(axs[:, len(task['train']):], task['test'], 'Test', **kwargs)
@@ -113,12 +114,13 @@ def plot_pred_and_target(pred, target, filename, sample_id, is_pred=True):
     pred_title = 'Predicted'
     if not is_pred:
         pred_title = 'Input'
-    title = "{} {}_{}".format(pred_title, filename, sample_id)
+    title = "{} {}_{}".format(pred_title, filename[:-5], sample_id)
     fig, axs = plt.subplots(1, 2, figsize=(12, 10), dpi=72)
     plot_one_ax(axs[0], pred, cmap=cmap,
                 norm=norm, title=title)
+    title = "{} {}_{}".format('Target', filename[:-5], sample_id)
     plot_one_ax(axs[1], target, cmap=cmap,
-                norm=norm, title=f'Target {filename}')
+                norm=norm, title=title)
     plt.tight_layout()
     plt.show()
 
@@ -129,6 +131,14 @@ def just_plot(pixmap):
                 norm=norm, title='A simple plot')
     plt.tight_layout()
     plt.show()
+
+
+def nth_sample(task, n):
+    if n < 0 or n >= len(task):
+        return None, None
+    pixmap_in = np.array(task[n]['input'])
+    pixmap_out = np.array(task[n]['output'])
+    return pixmap_in, pixmap_out
 
 
 def build_df_tags():
