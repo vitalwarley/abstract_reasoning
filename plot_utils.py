@@ -1,35 +1,20 @@
 import os
 import numpy as np
-import pandas as pd
 import json
 import matplotlib.pyplot as plt
 from matplotlib import colors
 from tqdm import tqdm_notebook
-from pathlib import Path
 
+from tags import build_df_tags
+from data import training_path
+from data import training_tasks
 
-data_path = Path('arc')
-training_path = data_path / 'training'
-evaluation_path = data_path / 'evaluation'
-test_path = data_path / 'test'
-
-training_tasks = sorted(os.listdir(training_path))
-evaluation_tasks = sorted(os.listdir(evaluation_path))
-test_tasks = sorted(os.listdir(test_path))
+# TODO: global var `tasks` that user modifies
 
 cmap = colors.ListedColormap(
     ['#000000', '#0074D9', '#FF4136', '#2ECC40', '#FFDC00',
      '#AAAAAA', '#F012BE', '#FF851B', '#7FDBFF', '#870C25'])
 norm = colors.Normalize(vmin=0, vmax=9)
-
-
-def flattener(pred):
-    str_pred = str([row for row in pred])
-    str_pred = str_pred.replace(', ', '')
-    str_pred = str_pred.replace('[[', '|')
-    str_pred = str_pred.replace('][', '|')
-    str_pred = str_pred.replace(']]', '|')
-    return str_pred
 
 
 def annotate_pixels(ax, pixmap):
@@ -53,8 +38,8 @@ def plot_one_ax(ax, task, **kwargs):
     ax.set_title(title + f' | {task.shape}')
     ax.set_yticklabels(list(range(task.shape[0])))
     ax.set_xticklabels(list(range(task.shape[1])))
-    ax.set_yticks([x-0.5 for x in range(1+len(task))])
-    ax.set_xticks([x-0.5 for x in range(1+len(task[0]))])
+    ax.set_yticks([x - 0.5 for x in range(1 + len(task))])
+    ax.set_xticks([x - 0.5 for x in range(1 + len(task[0]))])
     ax.grid(True, which='both', color='lightgrey', linewidth=0.5)
     if annotate:
         annotate_pixels(ax, task)
@@ -69,17 +54,23 @@ def plot_one_sample(axs, task, split, **kwargs):
         plot_one_ax(ax, t_out, cmap=cmap, norm=norm, title=f'{split}-{i} out', **kwargs)
 
 
+# TODO: plot train and test in different figures.
 def plot_task(task, filename, **kwargs):
     patterns = kwargs.get('patterns')
     export_to = kwargs.get('export_to')
     task_id = kwargs.get('task_id')
+    only_train = kwargs.get('only_train', False)
 
-    n = len(task["train"]) + len(task["test"])
+    n_train = len(task["train"])
+    n_test = len(task["test"]) if not only_train else 0
+
+    n = n_train + n_test
 
     fig, axs = plt.subplots(2, n, figsize=(6 * n, 10), dpi=72)
     plt.subplots_adjust(wspace=0, hspace=0)
     plot_one_sample(axs, task['train'], 'Train', **kwargs)
-    plot_one_sample(axs[:, len(task['train']):], task['test'], 'Test', **kwargs)
+    if not only_train:
+        plot_one_sample(axs[:, len(task['train']):], task['test'], 'Test', **kwargs)
     plt.suptitle(f'Task {task_id} [{filename[:-5]}]', y=1.05, fontsize=20)
     if patterns is not None:
         plt.suptitle(f'Task {filename[:-5]}\nPatterns: {patterns}', y=1.05, fontsize=20)
@@ -125,6 +116,20 @@ def plot_pred_and_target(pred, target, filename, sample_id, is_pred=True):
     plt.show()
 
 
+def plot_task_and_pred(task, pred, filename, sample_id):
+    fname = filename[:-5]
+    pixmap_in, pixmap_out = nth_sample(task, sample_id)
+    title = "{} {}_{}".format('Input', fname, sample_id)
+    fig, axs = plt.subplots(1, 3, figsize=(12, 10), dpi=72)
+    plot_one_ax(axs[0], pixmap_in, cmap=cmap, norm=norm, title=title)
+    title = "{} {}_{}".format('Output', fname, sample_id)
+    plot_one_ax(axs[1], pixmap_out, cmap=cmap, norm=norm, title=title)
+    title = "{} {}_{}".format('Prediction', fname, sample_id)
+    plot_one_ax(axs[2], pred, cmap=cmap, norm=norm, title=title)
+    plt.tight_layout()
+    plt.show()
+
+
 def just_plot(pixmap):
     fig, ax = plt.subplots(1, 1, figsize=(6, 10), dpi=72)
     plot_one_ax(ax, pixmap, cmap=cmap,
@@ -139,50 +144,6 @@ def nth_sample(task, n):
     pixmap_in = np.array(task[n]['input'])
     pixmap_out = np.array(task[n]['output'])
     return pixmap_in, pixmap_out
-
-
-def build_df_tags():
-
-    # from https://www.kaggle.com/c/abstraction-and-reasoning-challenge/discussion/131238#760044
-    task_classification = pd.read_csv('task_classification.csv')
-    filenames = task_classification.output_id
-
-    # clean NaN
-    tags = task_classification.Tagging.values
-    tags = [tag for tag in tags if type(tag) != float]
-
-    # utility functions
-    def clean_string(s):
-        return s.strip().replace("'", '')
-
-    def split_list(ls):
-        return ls.replace('[', '').replace(']', '').split(',')
-
-    # extract Tagging column
-    # this series will have repeated value for the tasks with more than
-    # one pattern
-    tags_by_index = task_classification.Tagging.dropna()
-    tags_by_index = tags_by_index.map(split_list).explode().map(clean_string)
-
-    # build tasks with its tags as a sparse matrix
-    tasks_with_tags = pd.concat([filenames[tags_by_index.index],
-                                 pd.get_dummies(tags_by_index)],
-                                axis=1).reset_index(drop=True)
-
-    # sum rows for the same task
-    df = pd.DataFrame([], columns=tasks_with_tags.columns)
-
-    for group in tasks_with_tags.groupby('output_id').groups:
-        group_df = tasks_with_tags.groupby('output_id').get_group(group)
-        tags = group_df.iloc[:, 1:].sum().values
-        row = np.concatenate([[group], tags])
-        df = df.append(pd.DataFrame(row.reshape(1, -1), columns=df.columns),
-                       ignore_index=True)
-
-    # cast tags (0 or 1 values) to int
-    df[df.columns[1:]] = df.iloc[:, 1:].apply(lambda x: x.astype(np.int8))
-
-    return df
 
 
 def save_imgs_with_pattern(pattern=None):
