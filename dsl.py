@@ -1,4 +1,5 @@
 import numpy as np
+import itertools
 from numpy.lib.stride_tricks import as_strided
 from skimage.filters.rank import entropy
 from skimage.morphology import disk
@@ -6,16 +7,24 @@ from skimage.feature import corner_harris, corner_peaks
 from skimage import measure
 from skimage import feature
 
-from typing import List
+from typing import Callable, List, Union
+from nptyping import Array
 
 
-def group_by_color_unlifted(pixmap: np.ndarray) -> List[np.ndarray]:
+"""
+Mostly inspired by: https://www.kaggle.com/zenol42/dsl-and-genetic-algorithm-applied-to-arc
+"""
+
+# DSL
+
+
+def group_by_color_unlifted(pixmap: Array[int]) -> List[Array[int]]:
     nb_colors = int(pixmap.max()) + 1
     splited = [(pixmap == i) * i for i in range(1, nb_colors)]
     return [x for x in splited if np.any(x)]
 
 
-def crop_to_content_unlifted(pixmap):
+def crop_to_content_unlifted(pixmap: Array[int]) -> Array[int]:
     true_points = np.argwhere(pixmap)
     if len(true_points) == 0:
         return []
@@ -23,24 +32,122 @@ def crop_to_content_unlifted(pixmap):
     bottom_right = true_points.max(axis=0)
     pixmap = pixmap[top_left[0]:bottom_right[0] + 1,
                     top_left[1]:bottom_right[1] + 1]
-    return pixmap
+    return [pixmap]
 
 
-def negative_by_max_color_unlifted(pixmap):
+def split_h_unlifted(pixmap: Array[int]) -> List[Array[int]]:
+    h = pixmap.shape[0]
+    pivot = h // 2
+    if h % 2 == 1:
+        return [pixmap[:pivot, :], pixmap[pivot + 1:, :]]
+    else:
+        return [pixmap[:pivot, :], pixmap[pivot:, :]]
+
+
+def split_v_unlifted(pixmap: Array[int]) -> List[Array[int]]:
+    w = pixmap.shape[0]
+    pivot = w // 2
+    if w % 2 == 1:
+        return [pixmap[:pivot, :], pixmap[pivot + 1:, :]]
+    else:
+        return [pixmap[:pivot, :], pixmap[pivot:, :]]
+
+
+def negative_by_max_unlifted(pixmap: Array[int]) -> List[Array[int]]:
+    """Turn pixmap into its negative with the color being that which is the max."""
     negative = np.logical_not(pixmap).astype(int)
     color = max(pixmap.max(), 1)
-    return negative * color
+    return [negative * color]
 
 
-# Above code is from kaggle notebbok by ...
-def negative_by_most_frequent_color_unlifted(pixmap):
+def negative_by_frequecy_unlifted(pixmap: Array[int]) -> List[Array[int]]:
+    """Turn pixmap into its negative with the color being that which is the most frequent."""
     negative = np.logical_not(pixmap).astype(int)
-    # count color frequency, drop 0 count, argmax, then +1 to account 0
+    # Count color frequency, drop 0 count, argmax, then +1 to account 0
     color = np.argmax(np.bincount(pixmap.ravel())[1:]) + 1
-    return negative * color
+    return [negative * color]
 
 
-def pattern_repetition(pixmap):
+def identity(x: Array[int]) -> List[Array[int]]:
+    return x
+
+
+def tail(x: List[Array[int]]) -> List[Array[int]]:
+    if len(x) > 1:
+        return x[1:]
+    else:
+        return x
+
+
+def head(x: List[Array[int]]) -> List[Array[int]]:
+    if len(x) > 1:
+        return x[:1]
+    else:
+        return x
+
+
+def _check_shape_is_consistent(x: List[Array[int]]) -> List[Array[int]]:
+    if len(x) < 2:
+        return x
+    first_shape = tuple(x[0].shape)
+    ok_shapes = [first_shape == tuple(pixmap.shape) for pixmap in x[1:]]
+    return ok_shapes.all()
+
+
+def union(x: List[Array[int]]) -> List[Array[int]]:
+    if _check_shape_is_consistent(x):
+        return [np.bitwise_or.reduce(np.array(x).astype(int))]
+    else:
+        return []
+
+
+def intersect(x: List[Array[int]]) -> List[Array[int]]:
+    if _check_shape_is_consistent(x):
+        return [(np.prod(np.array(x), axis=0) > 0).astype(int)]
+    else:
+        return []
+
+
+def sort_by_color(xs: List[Array[int]]) -> List[Array[int]]:
+    xs = [x for x in xs if len(x.reshape(-1)) > 0]
+    return list(sorted(xs, key=lambda x: x.max()))
+
+
+def sort_by_weight(xs: List[Array[int]]) -> List[Array[int]]:
+    xs = [x for x in xs if len(x.reshape(-1)) > 0]
+    return list(sorted(xs, key=lambda x: (x > 0).sum()))
+
+
+def reverse(x):
+    return x[::-1]
+
+
+# Composition of functions:
+#   we need to generate a lifted version of the Array[int] -> List[Array[int]] functions
+def lift(fct: Callable[[Array[int]], List[Array[int]]]
+         ) -> Callable[[List[Array[int]]], List[Array[int]]]:
+    """Turn a function f: np.array -> [np.array] to f: [np.array] -> [np.array]"""
+    # Lift the function
+    def lifted_function(xs: List[Array[int]]):
+        # Map function to each x in xs
+        results = [fct(x) for x in xs]
+        # Flatten list
+        return list(itertools.chain(*results))
+    # Rename lifted functions
+    import re
+    lifted_function.__name__ = re.sub('_unlifted$', '', fct.__name__)
+    return lifted_function
+
+
+crop_to_content = lift(crop_to_content_unlifted)
+group_by_color = lift(group_by_color_unlifted)
+split_h = lift(split_h_unlifted)
+split_v = lift(split_v_unlifted)
+negative_by_max = lift(negative_by_max_unlifted)
+negative_by_frequency = lift(negative_by_frequecy_unlifted)
+
+
+def pattern_repetition(pixmap: Array[int]) -> Array[int]:
     """
     In contrast with `fractal_repetition`,
     the pattern repeats in a deterministic way.
@@ -116,7 +223,7 @@ def find_rectangle(pixmap, stride=1, shape=(3, 3), position=1):
     return pixmap[xs_strided[position], ys_strided[position]].copy()
 
 
-def retrieve_objects(pixmap, stride=3, obj_shape=(3, 3)):
+def retrieve_objects(pixmap, stride=3, obj_shape=(3, 3), filter_color=0):
     """
     This function is similar to `retrieve_rectangles`.
 
@@ -134,12 +241,13 @@ def retrieve_objects(pixmap, stride=3, obj_shape=(3, 3)):
     for i in range(n_blocks):
         rect = pixmap[xs_strided[i], ys_strided[i]]
         uniques_in_rect = np.unique(rect)
-        if uniques_in_rect.size == 2 and 0 not in uniques_in_rect:
+        if (uniques_in_rect.size == 2
+                and filter_color not in uniques_in_rect):
             outputs.append(rect.copy())
     return outputs
 
 
-def reflect_image(pixmap):
+def reflect_image(pixmap: Array[int]) -> Array[int]:
     output = np.flip(pixmap, axis=1)
     return output
 
@@ -320,16 +428,23 @@ def rectangle_extremities_from_contour(coords):
     return ll, ul, ur
 
 
-def extract_closure_from_rect(pixmap):
-    # filter content
-    filtered = filter_by_corners(pixmap)
-    # coords by contours
-    contours = [longer_contour(f) for f in filtered]
-    coords = contours[np.argmax([c.size for c in contours])]
+# TODO: refactor. how to generalize to both tasks 232 (crop with borders?) and task 28 (crop only inside)
+def extract_closure_from_rect(pixmap, filter_by_corners=True, only_inside=True):
+    if filter_by_corners:
+        # filter content
+        filtered = filter_by_corners(pixmap)
+        contours = [longer_contour(f) for f in filtered]
+        coords = contours[np.argmax([c.size for c in contours])]
+    else:
+        # coords by contours
+        coords = longer_contour(pixmap)
     # walk to extract points
     ll, ul, ur = rectangle_extremities_from_contour(coords)
     # return closure
-    return pixmap[ul[0] + 1:ll[0], ul[1] + 1:ur[1]].copy()
+    if only_inside:
+        return pixmap[ul[0] + 1:ll[0], ul[1] + 1:ur[1]].copy()
+    else:
+        return pixmap[ul[0]:ll[0] + 1, ul[1]:ur[1] + 1].copy()
 
 
 def match_and_fit_patterns(pixmap):
@@ -351,6 +466,10 @@ def match_and_fit_patterns(pixmap):
             x, y = x - 1, y
         elif y > 0:
             x, y = x, y - 1
+        if x == y == 3:
+            print(pixmap[x:x + s, y:y + s])
+            from plot_utils import just_plot
+            just_plot(pixmap)
         return (pixmap[x:x + s, y:y + s] == background).any()
 
     k = 3  # rect shape
@@ -358,7 +477,7 @@ def match_and_fit_patterns(pixmap):
     background = 0  # can be learned?
     objects = retrieve_objects(pixmap, stride=1)
     masked_objs = [mask_obj(obj, main_color, background) for obj in objects]
-    extracted_pixmap = extract_closure_from_rect(pixmap)
+    extracted_pixmap = extract_closure_from_rect(pixmap, filter_by_corners=False, only_inside=False)
 
     for obj, nd_color in masked_objs:
         rotated_objs = [np.rot90(obj, k=i + 1).copy() for i in range(4)]
@@ -380,7 +499,7 @@ def match_and_fit_patterns(pixmap):
     return extracted_pixmap
 
 
-def filter_by_color_frequency(pixmaps: List[np.ndarray]):
+def filter_by_color_frequency(pixmaps: List[Array[int]]):
     freqs = []
     for pixmap in pixmaps:
         count = np.bincount(pixmap.ravel())
