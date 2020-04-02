@@ -64,8 +64,17 @@ def negative_by_frequecy_unlifted(pixmap: Array[int]) -> List[Array[int]]:
     """Turn pixmap into its negative with the color being that which is the most frequent."""
     negative = np.logical_not(pixmap).astype(int)
     # Count color frequency, drop 0 count, argmax, then +1 to account 0
-    color = np.argmax(np.bincount(pixmap.ravel())[1:]) + 1
-    return [negative * color]
+    count = np.bincount(pixmap.ravel())[1:]
+    if count.size > 0:
+        color = np.argmax(count) + 1
+        return [negative * color]
+    else:
+        return []
+
+
+def reflect_image_unlifted(pixmap: Array[int]) -> Array[int]:
+    output = np.fliplr(pixmap)
+    return [output]
 
 
 def identity(x: Array[int]) -> List[Array[int]]:
@@ -91,7 +100,7 @@ def _check_shape_is_consistent(x: List[Array[int]]) -> List[Array[int]]:
         return x
     first_shape = tuple(x[0].shape)
     ok_shapes = [first_shape == tuple(pixmap.shape) for pixmap in x[1:]]
-    return ok_shapes.all()
+    return all(ok_shapes)
 
 
 def union(x: List[Array[int]]) -> List[Array[int]]:
@@ -145,7 +154,10 @@ split_h = lift(split_h_unlifted)
 split_v = lift(split_v_unlifted)
 negative_by_max = lift(negative_by_max_unlifted)
 negative_by_frequency = lift(negative_by_frequecy_unlifted)
+reflect_image = lift(reflect_image_unlifted)
 
+
+# TODO: refactor everything below.
 
 def pattern_repetition(pixmap: Array[int]) -> Array[int]:
     """
@@ -247,9 +259,6 @@ def retrieve_objects(pixmap, stride=3, obj_shape=(3, 3), filter_color=0):
     return outputs
 
 
-def reflect_image(pixmap: Array[int]) -> Array[int]:
-    output = np.flip(pixmap, axis=1)
-    return output
 
 
 def crop_unique_colors_orthogonal_to_color_continuity(pixmap):
