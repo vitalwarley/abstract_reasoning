@@ -397,7 +397,7 @@ def detect_infected_object(pixmap):
     x, y = intruder_coords[0, 0] + 1, intruder_coords[0, 1] + 1
     check_around_intruder = [padded_pixmap[x + dx, y + dy] != 0 for dx, dy in zip([-1, 0, 0, 1], [0, -1, +1, 0])]
     origins = np.array([[x - 3, y - 1],  # above
-                        [x + 1, y - 3],  # left
+                        [x - 1, y - 3],  # left
                         [x - 1, y + 1],  # right
                         [x + 1, y - 1]])  # below
     pixel_infected = np.argmax(check_around_intruder)
