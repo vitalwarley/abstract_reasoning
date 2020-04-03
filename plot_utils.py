@@ -84,18 +84,16 @@ def plot_task(task, filename, **kwargs):
         plt.show()
 
 
-def load_and_plot(tasks_path, task_fn, return_what=0, **kwargs):
+def load_task(tasks_path, task_fn, plot=False, **kwargs):
     task_file = str(tasks_path / task_fn)
 
     with open(task_file, 'r') as f:
         task = json.load(f)
 
-    if return_what == 0:
+    if plot:
         plot_task(task, task_fn, **kwargs)
-    elif return_what == 1:
         return task
-    elif return_what == 2:
-        plot_task(task, task_fn, **kwargs)
+    else:
         return task
 
 

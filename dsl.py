@@ -1,5 +1,9 @@
-import numpy as np
+"""DSL operators."""
 import itertools
+from typing import Callable, List
+
+import numpy as np
+from nptyping import Array
 from numpy.lib.stride_tricks import as_strided
 from skimage.filters.rank import entropy
 from skimage.morphology import disk
@@ -7,12 +11,10 @@ from skimage.feature import corner_harris, corner_peaks
 from skimage import measure
 from skimage import feature
 
-from typing import Callable, List, Union
-from nptyping import Array
-
 
 """
-Mostly inspired by: https://www.kaggle.com/zenol42/dsl-and-genetic-algorithm-applied-to-arc
+Mostly inspired by:
+  https://www.kaggle.com/zenol42/dsl-and-genetic-algorithm-applied-to-arc
 """
 
 # DSL

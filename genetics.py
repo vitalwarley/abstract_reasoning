@@ -1,5 +1,7 @@
-import numpy as np
+import math
 import random
+
+import numpy as np
 from dsl import identity
 from dsl import tail, head, union, intersect
 from dsl import sort_by_color, sort_by_weight, reverse
@@ -45,7 +47,7 @@ fitness_functions = [colors_fitness, activated_pixels_fitness, height_fitness, w
 
 def evaluate_fitness(program, task):
     """ Take a program and a task, and return its fitness score as a tuple."""
-    raw_score = np.zeros((len(fitness_functions)))
+    raw_fitness = np.zeros((len(fitness_functions)))
 
     # For each sample
     for sample in task:
@@ -57,23 +59,23 @@ def evaluate_fitness(program, task):
             images = evaluate(program, i)
             if images == []:
                 # Penalize no prediction!
-                raw_score[index] += 500
+                raw_fitness[index] *= 1.5
             else:
                 # Take only the score of the first output
-                raw_score[index] = fitness_function(images[0], o)
+                raw_fitness[index] = fitness_function(images[0], o)
 
-    adjusted_score = sum([score / (1 + score) for score in raw_score]) / len(raw_score)
-    return adjusted_score
+    adjusted_fitness = sum([score / (1 + score) for score in raw_fitness]) / len(raw_fitness)
+    return adjusted_fitness
 
 
-def build_candidates(allowed_nodes=[identity], best_candidates=None, nb_candidates=200):
+def build_candidates(allowed_nodes=[identity], best_candidates=None, nb_candidates=200, **kwargs):
     """ Create a poll of fresh candidates using the `allowed_nodes`.
 
     The pool contain a mix of new single instructions programs
     and mutations of the best candidates.
     """
     new_candidates = []
-    length_limit = 4  # Maximal length of a program
+    length_limit = kwargs.get('program_size', 4)  # Maximal length of a program
 
     def random_node():
         return random.choice(allowed_nodes)
@@ -101,7 +103,7 @@ def build_candidates(allowed_nodes=[identity], best_candidates=None, nb_candidat
     return new_candidates[:nb_candidates]
 
 
-def build_model(task, max_iterations=20, verbose=True):
+def build_model(task, max_iterations=20, verbose=True, **kwargs):
     candidates_nodes = [
         tail, head, union, intersect,
         sort_by_color, sort_by_weight, reverse,
@@ -114,7 +116,7 @@ def build_model(task, max_iterations=20, verbose=True):
         print("Candidates nodes are:\n", [program_description([n]) for n in candidates_nodes])
         print()
 
-    # A dictionary of {score:candidate}
+    # A dictionary of {key:(score, candidate)}
     best_candidates = {}
     for i in range(max_iterations):
         if verbose:
@@ -122,7 +124,8 @@ def build_model(task, max_iterations=20, verbose=True):
             print("-" * 10)
 
         # Create a list of candidates
-        candidates = build_candidates(candidates_nodes, [candidate for score, candidate in best_candidates.values()])
+        previous_best_candidates = [candidate for score, candidate in best_candidates.values()]
+        candidates = build_candidates(candidates_nodes, previous_best_candidates, **kwargs)
 
         # Keep candidates with best fitness.
         # They will be stored in the `best_candidates` dictionary
@@ -133,7 +136,7 @@ def build_model(task, max_iterations=20, verbose=True):
 
         # best_candidates = {k: v for k, v in sorted(best_candidates.items(), key=lambda item: item[1][0])}
         # Normalized fitness
-        population_fitness = sum([score for score, candidate in best_candidates.values()])
+        population_fitness = math.fsum([score for score, candidate in best_candidates.values()])
         best_candidates = {key: (score / population_fitness, candidate) for key, (score, candidate) in best_candidates.items()}
 
         # For each best candidate, we look if we have an answer
