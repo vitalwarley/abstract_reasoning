@@ -1,7 +1,9 @@
 import math
 import random
+from typing import Callable, List, Tuple
 
 import numpy as np
+from nptyping import Array
 from dsl import identity
 from dsl import tail, head, union, intersect
 from dsl import sort_by_color, sort_by_weight, reverse
@@ -10,7 +12,15 @@ from dsl import negative_by_frequency, negative_by_max
 from dsl import reflect_image
 from evaluation import evaluate, program_description, is_solution
 
-# Inspired by https://www.kaggle.com/zenol42/dsl-and-genetic-algorithm-applied-to-arc
+from type_aliases import Program
+
+CANDIDATES_NODES = [
+    tail, head, union, intersect,
+    sort_by_color, sort_by_weight, reverse,
+    crop_to_content, group_by_color, split_h, split_v,
+    negative_by_frequency, negative_by_max,
+    reflect_image
+]
 
 
 def width_fitness(predicted, expected_output):
@@ -61,71 +71,73 @@ def evaluate_fitness(program, task):
                 # Penalize no prediction!
                 raw_fitness[index] *= 1.5
             else:
-                # Take only the score of the first output
-                raw_fitness[index] = fitness_function(images[0], o)
+                for img in images:
+                    raw_fitness[index] += fitness_function(img, o)
+                raw_fitness[index] /= len(images)
 
     adjusted_fitness = sum([score / (1 + score) for score in raw_fitness]) / len(raw_fitness)
     return adjusted_fitness
 
 
-def build_candidates(allowed_nodes=[identity], best_candidates=None, nb_candidates=200, **kwargs):
-    """ Create a poll of fresh candidates using the `allowed_nodes`.
-
-    The pool contain a mix of new single instructions programs
-    and mutations of the best candidates.
-    """
-    new_candidates = []
-    length_limit = kwargs.get('program_size', 4)  # Maximal length of a program
-
-    def random_node():
-        return random.choice(allowed_nodes)
-
-    # Until we have enougth new candidates
-    while(len(new_candidates) < nb_candidates):
-        # Add 10 new programs
-        for i in range(5):
-            new_candidates += [[random_node()]]
-
-        # Create new programs based on each best candidate
-        for best_program in best_candidates:
-            # Add one op on its right but limit the length of the program
-            if len(best_program) < length_limit - 1:
-                new_candidates += [[random_node()] + best_program]
-            # Add one op on its left but limit the length of the program
-            if len(best_program) < length_limit - 1:
-                new_candidates += [best_program + [random_node()]]
-            # Mutate one instruction of the existing program
-            new_candidates += [list(best_program)]
-            new_candidates[-1][random.randrange(0, len(best_program))] = random_node()
-
-    # Truncate if we have too many candidates
-    np.random.shuffle(new_candidates)
-    return new_candidates[:nb_candidates]
+def _random_node(allowed_nodes):
+    return random.choice(allowed_nodes)
 
 
-def build_model(task, max_iterations=20, verbose=True, **kwargs):
-    candidates_nodes = [
-        tail, head, union, intersect,
-        sort_by_color, sort_by_weight, reverse,
-        crop_to_content, group_by_color, split_h, split_v,
-        negative_by_frequency, negative_by_max,
-        reflect_image
-    ]
+def crossover(parent_programs: Tuple[Program, Program]) -> Tuple[Program, Program]:
+    """Takes parents and perform a random permutation between them."""
+    assert len(parent_programs) == 2
+
+    prog_a, prog_b = parent_programs
+    prog_a_size = len(prog_a)
+    prog_b_size = len(prog_b)
+
+    # programs have variable but limited length
+    min_prog = min(prog_a_size, prog_b_size)
+    crossover_point = random.randrange(0, min_prog)
+
+    offspring_a = prog_a[:crossover_point] + prog_b[crossover_point:]
+    offspring_b = prog_a[crossover_point:] + prog_b[:crossover_point]
+
+    return offspring_a, offspring_b
+
+
+def mutate(program: Program, allowed_nodes: List[Program]) -> Program:
+    if (random.random() * 100) <= 1:
+        program[random.randrange(0, len(program))] = _random_node(allowed_nodes)
+    return program
+
+
+def tournament_selection(candidates: dict, tournament_size: int) -> Program:
+    selection = np.random.choice(len(candidates), size=tournament_size, replace=False)
+    selected_candidates = {key: candidates[key] for key in selection}
+    # (score, program)
+    best_candidate = sorted(selected_candidates.values(), key=lambda value: value[0], reverse=True)[0]
+    return best_candidate[1]
+
+
+def init_population(allowed_nodes, **kwargs):
+    population_size = kwargs.get('population_size', 0)
+    length_limit = kwargs.get('candidate_size', 0)  # Maximal length of a program
+    if population_size == 0 or length_limit == 0:
+        return []
+    # programs with variable sizes but with max `length_limit`
+    population = [[_random_node(allowed_nodes) for _ in range(random.randrange(1, length_limit + 1))] for _ in range(population_size)]
+    return population
+
+
+def build_model(task, population_size=200, candidate_size=5, tournament_ratio=0.25, max_iterations=20, verbose=False):
 
     if verbose:
-        print("Candidates nodes are:\n", [program_description([n]) for n in candidates_nodes])
+        print("Candidates nodes are:\n", [program_description([n]) for n in CANDIDATES_NODES])
         print()
 
-    # A dictionary of {key:(score, candidate)}
+    # A dictionary of {key:(score, candidate)}; initial random population
     best_candidates = {}
+    candidates = init_population(CANDIDATES_NODES, population_size=population_size, candidate_size=candidate_size)
     for i in range(max_iterations):
         if verbose:
             print("Iteration ", i + 1)
             print("-" * 10)
-
-        # Create a list of candidates
-        previous_best_candidates = [candidate for score, candidate in best_candidates.values()]
-        candidates = build_candidates(candidates_nodes, previous_best_candidates, **kwargs)
 
         # Keep candidates with best fitness.
         # They will be stored in the `best_candidates` dictionary
@@ -134,7 +146,6 @@ def build_model(task, max_iterations=20, verbose=True, **kwargs):
             score = evaluate_fitness(candidate, task)
             best_candidates[key] = (score, candidate)
 
-        # best_candidates = {k: v for k, v in sorted(best_candidates.items(), key=lambda item: item[1][0])}
         # Normalized fitness
         population_fitness = math.fsum([score for score, candidate in best_candidates.values()])
         best_candidates = {key: (score / population_fitness, candidate) for key, (score, candidate) in best_candidates.items()}
@@ -144,11 +155,26 @@ def build_model(task, max_iterations=20, verbose=True, **kwargs):
             if is_solution(program, task):
                 return (score, program)
 
+        # Don't have an answer yet
+        # Evolve population
+        candidates.clear()
+        for _ in range(population_size // 2):
+            # Select best candidates for next generation
+            tournament_size = int(population_size * tournament_ratio)
+            candidate_a = tournament_selection(best_candidates, tournament_size=tournament_size)
+            candidate_b = tournament_selection(best_candidates, tournament_size=tournament_size)
+            offsprings = crossover((candidate_a, candidate_b))
+
+            for child in offsprings:
+                mutate(child, allowed_nodes=CANDIDATES_NODES)
+                candidates.append(child)
+
         # Give some informations by selecting a random candidate
         if verbose:
-            print("Best candidates lenght:", len(best_candidates))
             best_score, best_candidate = sorted(best_candidates.items(), key=lambda item: item[1][0], reverse=True)[0][1]
             print("Best candidate score:", best_score)
             print("Best candidate implementation:", program_description(best_candidate))
+            print("Best candidate lenght:", len(best_candidate))
             print()
+
     return None
